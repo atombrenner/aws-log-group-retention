@@ -36,20 +36,26 @@ async function* getLogStreams(logGroupName: string) {
 }
 
 async function main() {
-  const twoWeeksAgo = +Date.now() - 1000 * 60 * 60 * 24 * 14
+  const now = +Date.now()
+  const oneDay = 1000 * 60 * 60 * 24
 
-  // set the retention policy to 14 days and delete all streams older than two weeks
-  for await (const { logGroupName, retentionInDays } of getLogGroups()) {
-    if (!retentionInDays && logGroupName) {
-      console.log('Updating LogGroup', logGroupName)
-      await cw.putRetentionPolicy({ logGroupName, retentionInDays: 14 })
+  for await (let { logGroupName, retentionInDays } of getLogGroups()) {
+    if (!logGroupName) continue
 
-      for await (const stream of getLogStreams(logGroupName)) {
-        const lastIngestionTime = stream.lastIngestionTime ?? 0
-        if (lastIngestionTime < twoWeeksAgo) {
-          console.log(`Deleting LogStream ${logGroupName}-${fmtDate(lastIngestionTime)}`)
-          await cw.deleteLogStream({ logGroupName, logStreamName: stream.logStreamName })
-        }
+    // set the retention policy to 14 days
+    if (!retentionInDays) {
+      console.log('Updating LogGroup', logGroupName, retentionInDays)
+      retentionInDays = 14
+      await cw.putRetentionPolicy({ logGroupName, retentionInDays })
+    }
+
+    // delete all streams older than two weeks
+    const tooOld = now - retentionInDays * oneDay
+    for await (const stream of getLogStreams(logGroupName)) {
+      const lastIngestionTime = stream.lastIngestionTime ?? 0
+      if (lastIngestionTime < tooOld) {
+        console.log(`Deleting LogStream ${logGroupName}-${fmtDate(lastIngestionTime)}`)
+        await cw.deleteLogStream({ logGroupName, logStreamName: stream.logStreamName })
       }
     }
   }
