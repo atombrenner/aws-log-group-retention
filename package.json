@@ -1,0 +1,23 @@
+{
+  "name": "aws-log-group-retention",
+  "version": "1.0.0",
+  "description": "Set the rentention of all 'never expire' log groups",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "ts-node --transpile-only index.ts",
+    "watch": "ts-node-dev --respawn --transpile-only index.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.41.0",
+    "prettier": "^2.4.1",
+    "typescript": "^4.4.4"
+  },
+  "devDependencies": {
+    "@tsconfig/node16": "^1.0.2",
+    "ts-node": "^10.4.0",
+    "ts-node-dev": "^1.1.8"
+  }
+}
