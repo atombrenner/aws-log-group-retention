@@ -27,7 +27,11 @@ async function* getLogGroups() {
 async function* getLogStreams(logGroupName: string) {
   let response: DescribeLogStreamsCommandOutput | undefined
   do {
-    response = await cw.describeLogStreams({ logGroupName, nextToken: response?.nextToken })
+    response = await cw.describeLogStreams({
+      logGroupName,
+      nextToken: response?.nextToken,
+      limit: 50,
+    })
     for (const logStream of response.logStreams ?? []) {
       yield logStream
     }
@@ -44,18 +48,20 @@ async function main() {
 
     // set the retention policy to 14 days
     if (!retentionInDays) {
-      console.log('Updating LogGroup', logGroupName, retentionInDays)
+      console.log('Updating LogGroup', logGroupName)
       retentionInDays = 14
       await cw.putRetentionPolicy({ logGroupName, retentionInDays })
+      await sleep(200) // limited to 5 calls per second
     }
 
-    // delete all streams older than two weeks
+    // delete all streams not in the retention period
     const tooOld = now - retentionInDays * oneDay
     for await (const stream of getLogStreams(logGroupName)) {
       const lastIngestionTime = stream.lastIngestionTime ?? 0
       if (lastIngestionTime < tooOld) {
         console.log(`Deleting LogStream ${logGroupName}-${fmtDate(lastIngestionTime)}`)
         await cw.deleteLogStream({ logGroupName, logStreamName: stream.logStreamName })
+        await sleep(200) // deleteLogStream is limited to 5 calls per second
       }
     }
   }
