@@ -3,21 +3,19 @@ import {
   DescribeLogGroupsCommandOutput,
   DescribeLogStreamsCommandOutput,
 } from '@aws-sdk/client-cloudwatch-logs'
+import { limitRate } from './limit-rate'
 
-const cw = new CloudWatchLogs({})
+const cw = new CloudWatchLogs({ maxAttempts: 5 })
 
 function fmtDate(date: number) {
   return new Date(date).toISOString().substr(0, 10)
 }
 
-async function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
 async function* getLogGroups() {
   let response: DescribeLogGroupsCommandOutput | undefined
   do {
-    response = await cw.describeLogGroups({ nextToken: response?.nextToken })
+    await limitRate()
+    response = await cw.describeLogGroups({ nextToken: response?.nextToken, limit: 50 })
     for (const logGroup of response.logGroups ?? []) {
       yield logGroup
     }
@@ -27,6 +25,7 @@ async function* getLogGroups() {
 async function* getLogStreams(logGroupName: string) {
   let response: DescribeLogStreamsCommandOutput | undefined
   do {
+    await limitRate()
     response = await cw.describeLogStreams({
       logGroupName,
       nextToken: response?.nextToken,
@@ -35,7 +34,6 @@ async function* getLogStreams(logGroupName: string) {
     for (const logStream of response.logStreams ?? []) {
       yield logStream
     }
-    await sleep(200) // describeLogStream is limited to 5 calls per second
   } while (response.nextToken)
 }
 
@@ -47,11 +45,12 @@ async function main() {
     if (!logGroupName) continue
 
     // set the retention policy to 14 days
+    console.log('Found LogGroup', logGroupName)
     if (!retentionInDays) {
       console.log('Updating LogGroup', logGroupName)
       retentionInDays = 14
+      await limitRate()
       await cw.putRetentionPolicy({ logGroupName, retentionInDays })
-      await sleep(200) // limited to 5 calls per second
     }
 
     // delete all streams not in the retention period
@@ -60,8 +59,8 @@ async function main() {
       const lastIngestionTime = stream.lastIngestionTime ?? 0
       if (lastIngestionTime < tooOld) {
         console.log(`Deleting LogStream ${logGroupName}-${fmtDate(lastIngestionTime)}`)
+        await limitRate()
         await cw.deleteLogStream({ logGroupName, logStreamName: stream.logStreamName })
-        await sleep(200) // deleteLogStream is limited to 5 calls per second
       }
     }
   }
