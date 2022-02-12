@@ -3,18 +3,19 @@ import {
   DescribeLogGroupsCommandOutput,
   DescribeLogStreamsCommandOutput,
 } from '@aws-sdk/client-cloudwatch-logs'
-import { limitRate } from './limit-rate'
+import { makeThrottle } from './throttle'
 
-const cw = new CloudWatchLogs({ maxAttempts: 5 })
+const cw = new CloudWatchLogs({ maxAttempts: 7 })
+const throttle = makeThrottle(5)
 
 function fmtDate(date: number) {
-  return new Date(date).toISOString().substr(0, 10)
+  return new Date(date).toISOString().substring(0, 10)
 }
 
 async function* getLogGroups() {
   let response: DescribeLogGroupsCommandOutput | undefined
   do {
-    await limitRate()
+    await throttle()
     response = await cw.describeLogGroups({ nextToken: response?.nextToken, limit: 50 })
     for (const logGroup of response.logGroups ?? []) {
       yield logGroup
@@ -25,7 +26,7 @@ async function* getLogGroups() {
 async function* getLogStreams(logGroupName: string) {
   let response: DescribeLogStreamsCommandOutput | undefined
   do {
-    await limitRate()
+    await throttle()
     response = await cw.describeLogStreams({
       logGroupName,
       nextToken: response?.nextToken,
@@ -49,7 +50,7 @@ async function main() {
     if (!retentionInDays) {
       console.log('Updating LogGroup', logGroupName)
       retentionInDays = 14
-      await limitRate()
+      await throttle()
       await cw.putRetentionPolicy({ logGroupName, retentionInDays })
     }
 
@@ -59,7 +60,7 @@ async function main() {
       const lastIngestionTime = stream.lastIngestionTime ?? 0
       if (lastIngestionTime < tooOld) {
         console.log(`Deleting LogStream ${logGroupName}-${fmtDate(lastIngestionTime)}`)
-        await limitRate()
+        await throttle()
         await cw.deleteLogStream({ logGroupName, logStreamName: stream.logStreamName })
       }
     }
