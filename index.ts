@@ -5,9 +5,8 @@ import {
 } from '@aws-sdk/client-cloudwatch-logs'
 import { makeThrottle } from './throttle'
 
-const cw = new CloudWatchLogs({ maxAttempts: 7 })
-const throttle = makeThrottle(5)
-
+const cw = new CloudWatchLogs({ maxAttempts: 5 })
+const throttle = makeThrottle(1.5)
 function fmtDate(date: number) {
   return new Date(date).toISOString().substring(0, 10)
 }
@@ -16,7 +15,7 @@ async function* getLogGroups() {
   let response: DescribeLogGroupsCommandOutput | undefined
   do {
     await throttle()
-    response = await cw.describeLogGroups({ nextToken: response?.nextToken, limit: 50 })
+    response = await cw.describeLogGroups({ nextToken: response?.nextToken, limit: 10 })
     for (const logGroup of response.logGroups ?? []) {
       yield logGroup
     }
@@ -39,7 +38,7 @@ async function* getLogStreams(logGroupName: string) {
 }
 
 async function main() {
-  const now = +Date.now()
+  const now = Date.now()
   const oneDay = 1000 * 60 * 60 * 24
 
   for await (let { logGroupName, retentionInDays } of getLogGroups()) {

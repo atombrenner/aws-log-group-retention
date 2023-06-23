@@ -1,4 +1,4 @@
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+import { setTimeout } from 'timers/promises'
 
 /**
  *
@@ -7,13 +7,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  */
 export const makeThrottle = (rate: number) => {
   const timeBetweenCalls = 1000 / rate
-  const lastCall = Date.now() - timeBetweenCalls
+  let lastCall = Date.now() - timeBetweenCalls
 
   return async () => {
     const now = Date.now()
     const timeSinceLastCall = now - lastCall
     if (timeSinceLastCall < timeBetweenCalls) {
-      await sleep(timeBetweenCalls - timeSinceLastCall)
+      await setTimeout(timeBetweenCalls - timeSinceLastCall)
     }
+    lastCall = Date.now()
   }
 }
