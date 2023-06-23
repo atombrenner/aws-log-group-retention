@@ -6,7 +6,8 @@ import {
 import { makeThrottle } from './throttle'
 
 const cw = new CloudWatchLogs({ maxAttempts: 5 })
-const throttle = makeThrottle(1.5)
+const throttle = makeThrottle(2)
+
 function fmtDate(date: number) {
   return new Date(date).toISOString().substring(0, 10)
 }
@@ -15,7 +16,7 @@ async function* getLogGroups() {
   let response: DescribeLogGroupsCommandOutput | undefined
   do {
     await throttle()
-    response = await cw.describeLogGroups({ nextToken: response?.nextToken, limit: 10 })
+    response = await cw.describeLogGroups({ nextToken: response?.nextToken, limit: 50 })
     for (const logGroup of response.logGroups ?? []) {
       yield logGroup
     }
@@ -31,9 +32,7 @@ async function* getLogStreams(logGroupName: string) {
       nextToken: response?.nextToken,
       limit: 50,
     })
-    for (const logStream of response.logStreams ?? []) {
-      yield logStream
-    }
+    yield* response.logStreams ?? []
   } while (response.nextToken)
 }
 
@@ -55,12 +54,29 @@ async function main() {
 
     // delete all streams not in the retention period
     const tooOld = now - retentionInDays * oneDay
+    let obsolete = true
+    const outdated: [string, number][] = []
+
     for await (const stream of getLogStreams(logGroupName)) {
+      // console.log(stream.logStreamName)
       const lastIngestionTime = stream.lastIngestionTime ?? 0
-      if (lastIngestionTime < tooOld) {
-        console.log(`Deleting LogStream ${logGroupName}-${fmtDate(lastIngestionTime)}`)
+      if (stream.logStreamName && lastIngestionTime < tooOld) {
+        outdated.push([stream.logStreamName, lastIngestionTime])
+      } else {
+        obsolete = false
+      }
+    }
+
+    if (obsolete) {
+      console.log(`Deleting LogGroup ${logGroupName} with ${outdated.length} streams`)
+      await throttle()
+      cw.deleteLogGroup({ logGroupName })
+    } else {
+      console.log(`Found ${outdated.length} outdated streams`)
+      for (const [logStreamName, timestamp] of outdated) {
+        console.log(`Deleting LogStream ${logGroupName}-${fmtDate(timestamp)}`)
         await throttle()
-        await cw.deleteLogStream({ logGroupName, logStreamName: stream.logStreamName })
+        await cw.deleteLogStream({ logGroupName, logStreamName })
       }
     }
   }
